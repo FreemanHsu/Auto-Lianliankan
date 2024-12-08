@@ -16,6 +16,7 @@ import win32gui
 import win32con
 from PIL import ImageGrab
 import time
+import random
 from config import *
 
 
@@ -32,7 +33,7 @@ def getGameWindowPosition():
     win32gui.SetForegroundWindow(window) # 将窗体顶置
     pos = win32gui.GetWindowRect(window)
     print("定位到游戏窗体：" + str(pos))
-    return (pos[0],pos[1])
+    return (pos[0], pos[1])
 
 # 获取一张完整的屏幕截图
 def getScreenImage():
@@ -49,6 +50,21 @@ def getAllSquare(screen_image,game_pos):
     game_y = game_pos[1] + MARGIN_HEIGHT
     # 从连接区域左上开始，把图像切割成一个一个的小块，切割标准是按照小块的横纵坐标。
     all_square = []
+
+    # DEBUG
+    image_with_boxes = screen_image.copy()
+
+    for x in range(H_NUM):
+        for y in range(V_NUM):
+            # 获取小块的坐标
+            top_left = (game_x + x * SQUARE_WIDTH, game_y + y * SQUARE_HEIGHT)
+            bottom_right = (game_x + (x+1) * SQUARE_WIDTH, game_y + (y+1) * SQUARE_HEIGHT)
+            
+            # 在原图副本上绘制边界
+            cv2.rectangle(image_with_boxes, top_left, bottom_right, (0, 255, 0), 2)
+
+    cv2.imwrite("screen_debug.png", image_with_boxes)
+
     for x in range(0,H_NUM):
         # line_square = []
         for y in range(0,V_NUM):
@@ -89,6 +105,35 @@ def getAllSquareTypes(all_square):
             types.append(square)
     return types
 
+def concatenate_images(types):
+    # 初始化一个空图像，用于拼接
+    concatenated_image = None
+    
+    # 按照类型数量计算需要多少行和列来拼接图像
+    num_images = len(types)
+    rows = num_images 
+    cols = 1 
+    
+    # 拼接图像
+    for i in range(rows):
+        # 创建一个空的行图像
+        row_images = []
+        for j in range(cols):
+            index = i * cols + j
+            if index < num_images:
+                # 添加图像到行
+                row_images.append(types[index])
+        # 水平拼接当前行的图像
+        row_concatenated = cv2.hconcat(row_images)
+        # 将当前行添加到最终的拼接图像
+        if concatenated_image is None:
+            concatenated_image = row_concatenated
+        else:
+            concatenated_image = cv2.vconcat([concatenated_image, row_concatenated])
+
+    # 保存拼接后的图像
+    cv2.imwrite('concatenated_types.png', concatenated_image)
+
 # 将所有的方块与类型进行比较，转置成数字
 def getAllSquareRecord(all_square_list,types):
     print("将所有的方块与类型进行比较，转置成数字矩阵...")
@@ -111,6 +156,7 @@ def getAllSquareRecord(all_square_list,types):
 
 # 自动消除
 def autoRelease(result,game_x,game_y):
+    print("game_x: {}, game_y: {}".format(game_x, game_y))
     for i in range(0,len(result)):
         for j in range(0,len(result[0])):
             # 以上两个for循环，定位第一个选中点
@@ -124,52 +170,70 @@ def autoRelease(result,game_x,game_y):
                                 result[i][j] = 0
                                 result[m][n] = 0
                                 print('可消除点：'+ str(i+1) + ',' + str(j+1) + '和' + str(m+1) + ',' + str(n+1))
-                                x1 = game_x + j*SQUARE_WIDTH
-                                y1 = game_y + i*SQUARE_HEIGHT
-                                x2 = game_x + n*SQUARE_WIDTH
-                                y2 = game_y + m*SQUARE_HEIGHT
-                                win32api.SetCursorPos((x1 + 15,y1 + 18))
-                                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, x1+15, y1+18, 0, 0)
-                                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, x1+15, y1+18, 0, 0)
+                                x1 = game_x + j*SQUARE_WIDTH_1080P + 2
+                                y1 = game_y + i*SQUARE_HEIGHT_1080P + 3
+                                x2 = game_x + n*SQUARE_WIDTH_1080P + 2
+                                y2 = game_y + m*SQUARE_HEIGHT_1080P + 3
+                                print("({}, {}), ({}, {})".format(x1, y1, x2, y2))
+                                # win32api.SetCursorPos((game_x, game_y))
+                                win32api.SetCursorPos((x1, y1))
+                                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, x1, y1, 0, 0)
+                                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, x1, y1, 0, 0)
                                 time.sleep(TIME_INTERVAL)
 
-                                win32api.SetCursorPos((x2 + 15, y2 + 18))
-                                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, x2 + 15, y2 + 18, 0, 0)
-                                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, x2 + 15, y2 + 18, 0, 0)
+                                win32api.SetCursorPos((x2, y2))
+                                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, x2, y2, 0, 0)
+                                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, x2, y2, 0, 0)
                                 time.sleep(TIME_INTERVAL)
                                 return True
     return False
 
-def autoRemove(squares,game_pos):
+def autoRemove(squares, game_pos):
     # 每次消除一对儿，QQ的连连看最多105对儿
-    game_x = game_pos[0] + MARGIN_LEFT
-    game_y = game_pos[1] + MARGIN_HEIGHT
+    game_x = game_pos[0] + int(MARGIN_LEFT / 2)
+    game_y = game_pos[1] + int(MARGIN_HEIGHT / 2)
     # 判断是否消除完了？如果没有的话，点击重列后继续消除
-    for i in range(0,105):
+    # for i in range(0,1):
+    for i in range(0,60):
+        random_t = random.uniform(1, 15) * HESITATE
+        time.sleep(random_t)
         autoRelease(squares,game_x,game_y)
 
+def drawTypeDebugImage(record, game_pos):
+    img = cv2.imread("screen_debug.png")
+    game_x = game_pos[0] + MARGIN_LEFT
+    game_y = game_pos[1] + MARGIN_HEIGHT
+
+    for x in range(H_NUM):
+        for y in range(V_NUM):
+            # 获取小块的坐标
+            top_left = (game_x + x * SQUARE_WIDTH, game_y + y * SQUARE_HEIGHT)
+            bottom_right = (game_x + (x+1) * SQUARE_WIDTH, game_y + (y+1) * SQUARE_HEIGHT)
+
+            type_num = record[y][x]
+            if type_num > 0:
+                cv2.putText(img, str(type_num), (top_left[0] + 5, top_left[1] + 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+
+    cv2.imwrite("screen_type_debug.png", img)
 
 if __name__ == '__main__':
     # 1、定位游戏窗体
+    # 这里接口拿到的是假设 1080p 的坐标，但是截图是 4K 的
     game_pos = getGameWindowPosition()
     time.sleep(1)
     # 2、从屏幕截图一张，通过opencv读取
     screen_image = getScreenImage()
     # 3、图像切片，把截图中的连连看切成一个一个的小方块，保存在一个数组中
-    all_square_list = getAllSquare(screen_image,game_pos)
+    all_square_list = getAllSquare(screen_image, (game_pos[0] * 2, game_pos[1] * 2))
     # 4、切片处理后的图片，相同的作为一种类型，放在数组中。
     types = getAllSquareTypes(all_square_list)
+    print("# Types: {}".format(len(types)))
+    concatenate_images(types)
     # 5、将切片处理后的图片，转换成相对应的数字矩阵。注意 拿到的数组是横纵逆向的，转置一下。
     result = np.transpose(getAllSquareRecord(all_square_list,types))
+    drawTypeDebugImage(result, (game_pos[0] * 2, game_pos[1] * 2))
     # 6、执行自动消除
     autoRemove(result,game_pos)
     # 7、消除完成，释放资源。
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-
-
-
-
-
-
-

@@ -50,4 +50,6 @@ Temporary Items
 .idea/
 screen.png
 __pycache__/
-
+screen_debug.png
+concatenated_types.png
+screen_type_debug.png
